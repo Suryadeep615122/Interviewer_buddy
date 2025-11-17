@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+# Optional (if you have crewai packages available)
+crewai
+crewai_tools
+docx

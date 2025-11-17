@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environments
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# Cache / temp
+*.cache
+*.tmp
+
+# AI Agents folder
+ai_agents/
+
+# CrewAI temp files
+crew_output/
+reports/
+*.json
+
+# Node / Frontend
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+# Git ignore file 

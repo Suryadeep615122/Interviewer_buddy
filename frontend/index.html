@@ -1,17 +1,265 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interview_u</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dynamic Interview Form</title>
+    <style>
+      /* Center the page and set gradient background */
+      body {
+        font-family: "Poppins", sans-serif;
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #74abe2, #5563de);
+        overflow: hidden;
+      }
 
-    <div class="container">
-        <div class="item main">main</div>
-        <div class="item text">Transcription</div>
+      .form-container {
+        background: white;
+        padding: 30px 40px;
+        border-radius: 16px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        text-align: center;
+        width: 400px;
+        height: 550px;
+        overflow: auto;
+        transition: 0.3s ease;
+      }
+
+      .form-container:hover {
+        transform: scale(1.02);
+      }
+
+      h2 {
+        color: #3a3a3a;
+        font-size: 28px;
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        text-align: left;
+        font-size: 18px;
+        font-weight: 500;
+        color: #333;
+        margin-top: 10px;
+        margin-bottom: 5px;
+      }
+
+      input,
+      select {
+        width: 100%;
+        padding: 10px;
+        font-size: 16px;
+        border: 2px solid #ccc;
+        border-radius: 8px;
+        outline: none;
+        transition: border-color 0.3s;
+      }
+
+      input:focus,
+      select:focus {
+        border-color: #5563de;
+      }
+
+      button {
+        background: linear-gradient(135deg, #5563de, #74abe2);
+        color: white;
+        border: none;
+        font-size: 18px;
+        padding: 10px 20px;
+        margin-top: 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.3s, transform 0.2s;
+      }
+
+      button:hover {
+        background: linear-gradient(135deg, #6e7ff3, #8ec7ff);
+        transform: scale(1.05);
+      }
+
+      #outputBox {
+        margin-top: 25px;
+        padding: 15px;
+        border-radius: 12px;
+        background: #f8f9ff;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        font-size: 17px;
+        line-height: 1.6;
+        text-align: left;
+        color: #333;
+        display: none;
+      }
+
+      strong {
+        color: #5563de;
+      }
+
+      #otherRoleBox {
+        display: none;
+        animation: fadeIn 0.5s ease-in-out;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .form-container::-webkit-scrollbar {
+        width: 8px;
+      }
+      .form-container::-webkit-scrollbar-thumb {
+        background: #5563de;
+        border-radius: 4px;
+      }
+      .form-container::-webkit-scrollbar-track {
+        background: #eee;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="form-container">
+      <h2 id="welcomeText">Welcome User</h2>
+
+      <form id="userForm">
+        <label for="name1">Name:</label>
+        <input type="text" id="name1" placeholder="Enter name" />
+
+        <label for="graduation">Graduation:</label>
+        <input type="text" id="graduation" placeholder="e.g. B.Tech, MBA" />
+
+        <label for="topic1">Role:</label>
+        <select id="topic1">
+          <option value="DSA">DSA</option>
+          <option value="Data Science">Data Science</option>
+          <option value="Frontend">Frontend</option>
+          <option value="Backend Web Development">
+            Backend Web Development
+          </option>
+          <option value="Fullstack Development">Fullstack Development</option>
+          <option value="Software Developer Engineer">SDE</option>
+          <option value="other">Other</option>
+        </select>
+
+        <div id="otherRoleBox" style="margin-top: 8px">
+          <label for="otherRoleInput">Enter Role:</label>
+          <input
+            type="text"
+            id="otherRoleInput"
+            placeholder="Enter your role"
+          />
+        </div>
+
+        <label for="interviewType">Interview Type:</label>
+        <select id="interviewType">
+          <option value="HR">HR</option>
+          <option value="Technical">Technical</option>
+        </select>
+
+        <label for="interviewLevel">Interview Level:</label>
+        <select id="interviewLevel">
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="Hard">Hard</option>
+        </select>
+
+        <button type="button" id="showData">Show Data</button>
+
+        <!-- ⭐ New Start Interview Button -->
+        <button type="button" id="startInterviewBtn">Start Interview</button>
+      </form>
+
+      <div id="outputBox">
+        <p id="output"></p>
+      </div>
     </div>
-    
-</body>
+
+    <script>
+      const nameInput = document.getElementById("name1");
+      const graduationInput = document.getElementById("graduation");
+      const welcomeText = document.getElementById("welcomeText");
+      const roleSelect = document.getElementById("topic1");
+      const otherBox = document.getElementById("otherRoleBox");
+      const otherInput = document.getElementById("otherRoleInput");
+      const interviewType = document.getElementById("interviewType");
+      const interviewLevel = document.getElementById("interviewLevel");
+      const showDataBtn = document.getElementById("showData");
+      const startInterviewBtn = document.getElementById("startInterviewBtn");
+      const outputBox = document.getElementById("outputBox");
+      const output = document.getElementById("output");
+
+      let customRole = "";
+
+      nameInput.addEventListener("input", () => {
+        welcomeText.textContent = nameInput.value.trim()
+          ? `Welcome ${nameInput.value.trim()}`
+          : "Welcome User";
+      });
+
+      roleSelect.addEventListener("change", () => {
+        if (roleSelect.value === "other") {
+          otherBox.style.display = "block";
+        } else {
+          otherBox.style.display = "none";
+          customRole = "";
+        }
+      });
+
+      otherInput.addEventListener("input", () => {
+        customRole = otherInput.value.trim();
+      });
+
+      showDataBtn.addEventListener("click", () => {
+        const name = nameInput.value.trim() || "User";
+        const graduation = graduationInput.value.trim() || "Not specified";
+        const selectedRole =
+          roleSelect.value === "other"
+            ? customRole || "Other (not entered)"
+            : roleSelect.value;
+
+        const type = interviewType.value;
+        const level = interviewLevel.value;
+
+        outputBox.style.display = "block";
+        output.innerHTML = `
+        <strong>Entered Details:</strong><br>
+        👤 <b>Name:</b> ${name}<br>
+        🎓 <b>Graduation:</b> ${graduation}<br>
+        💼 <b>Role:</b> ${selectedRole}<br>
+        🗂️ <b>Interview Type:</b> ${type}<br>
+        ⚙️ <b>Interview Level:</b> ${level}
+      `;
+      });
+
+      /* ⭐ Save everything to LocalStorage + Redirect */
+      startInterviewBtn.addEventListener("click", () => {
+        const name = nameInput.value.trim() || "User";
+        const graduation = graduationInput.value.trim() || "";
+        const selectedRole =
+          roleSelect.value === "other" ? customRole : roleSelect.value;
+
+        const type = interviewType.value;
+        const level = interviewLevel.value;
+
+        // Save to localStorage
+        localStorage.setItem("name", name);
+        localStorage.setItem("graduation", graduation);
+        localStorage.setItem("role", selectedRole);
+        localStorage.setItem("interviewType", type);
+        localStorage.setItem("interviewLevel", level);
+
+        window.location.href = "index2_test.html";
+      });
+    </script>
+  </body>
 </html>

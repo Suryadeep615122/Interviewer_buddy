@@ -1,0 +1,564 @@
+<!-- frontend/index2.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Interview - Live</title>
+    <style>
+      /* (Same styles as your current nice version; trimmed to keep message shorter) */
+      :root {
+        --accent: #ee7f58;
+        --muted: #9aa0a6;
+        --panel: #fff;
+        --font: Poppins, system-ui, Arial;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: var(--font);
+        background: linear-gradient(180deg, #f4f7fb, #ffffff);
+      }
+      .page {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .card {
+        width: 95vw;
+        max-width: 1200px;
+        background: var(--panel);
+        border-radius: 14px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+        padding: 18px;
+        overflow: hidden;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .content {
+        display: flex;
+        gap: 18px;
+        align-items: flex-start;
+      }
+      .recbox {
+        width: 60%;
+        height: 70vh;
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+        flex: 0 0 60%;
+      }
+      #localVideo {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .transcript-panel {
+        width: 35%;
+        height: 70vh;
+        background: linear-gradient(180deg, #fff, #fbfbfd);
+        border-radius: 12px;
+        padding: 18px;
+        overflow: auto;
+        flex: 0 0 35%;
+      }
+      .bubble {
+        max-width: 92%;
+        padding: 12px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.35;
+        margin-bottom: 10px;
+      }
+      .bubble.agent {
+        background: #fdece6;
+        color: #4b2b16;
+        align-self: flex-start;
+      }
+      .bubble.user {
+        background: #ededed;
+        color: #222;
+        align-self: flex-end;
+      }
+      .footer {
+        margin-top: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 10px;
+        border-top: 1px solid rgba(0, 0, 0, 0.04);
+      }
+      .icon-btn {
+        width: 46px;
+        height: 46px;
+        border-radius: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+      .end-btn {
+        background: var(--accent);
+        color: #fff;
+        padding: 10px 16px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <div class="topbar">
+          <div>
+            <div id="userName" style="font-weight: 700">User</div>
+            <div id="userRole" style="color: #666; font-size: 13px">
+              Role • Graduation
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center">
+            <div id="timer">00:00</div>
+            <button id="backBtn">← Back</button>
+          </div>
+        </div>
+
+        <div class="content">
+          <div class="recbox" id="recbox">
+            <video id="localVideo" autoplay muted playsinline></video>
+          </div>
+
+          <div class="transcript-panel" id="transcriptPanel">
+            <div style="font-weight: 700; margin-bottom: 8px">
+              Interview Transcript
+            </div>
+            <div id="transcriptList"></div>
+            <div
+              style="
+                margin-top: 12px;
+                display: flex;
+                gap: 10px;
+                align-items: center;
+              "
+            >
+              <button id="downloadTranscript">Download</button>
+              <button id="viewReport">View Report</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <div style="display: flex; gap: 10px; align-items: center">
+            <div id="camToggle" class="icon-btn">📷</div>
+            <div id="micToggle" class="icon-btn">🎤</div>
+            <div id="recToggle" class="icon-btn">⏺</div>
+          </div>
+          <div>
+            <button id="endBtn" class="end-btn">End Interview</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      console.log("LOADED index2.html VERSION = 1.0.9");
+
+      /* ---------- FIXED WebSocket + Finalize URL Builder ---------- */
+      const WS_URL = (() => {
+        if (location.protocol === "file:") {
+          console.warn("Running from file:// — forcing ws://localhost:8000");
+          return "ws://localhost:8000/ws/interview";
+        }
+
+        if (
+          location.hostname === "localhost" ||
+          location.hostname === "127.0.0.1"
+        ) {
+          const scheme = location.protocol === "https:" ? "wss" : "ws";
+          return `${scheme}://${location.hostname}:8000/ws/interview`;
+        }
+
+        // fallback for actual deployed frontend
+        const scheme = location.protocol === "https:" ? "wss" : "ws";
+        return `${scheme}://${location.host}/ws/interview`;
+      })();
+
+      const FINALIZE_URL = (() => {
+        if (location.protocol === "file:") {
+          return "http://localhost:8000/finalize";
+        }
+        return `${location.protocol}//${location.host}/finalize`;
+      })();
+
+      /* ---------- Helper utilities ---------- */
+      const el = (id) => document.getElementById(id);
+      function formatTS(d = new Date()) {
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const ss = String(d.getSeconds()).padStart(2, "0");
+        return `${mm}:${ss}`;
+      }
+      function escapeHtml(s) {
+        const p = document.createElement("p");
+        p.textContent = s;
+        return p.innerHTML;
+      }
+      /* ---------- Text-to-Speech ---------- */
+      function speakText(text) {
+        try {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = "en-US";
+          utter.rate = 1.0;
+          utter.pitch = 1.0;
+          utter.volume = 1.0;
+
+          // Stop any previous speech
+          window.speechSynthesis.cancel();
+
+          // Speak the text
+          window.speechSynthesis.speak(utter);
+        } catch (e) {
+          console.warn("TTS failed:", e);
+        }
+      }
+
+      /* ---------- DOM references ---------- */
+      const localVideo = el("localVideo");
+      const recToggle = el("recToggle");
+      const micToggle = el("micToggle");
+      const camToggle = el("camToggle");
+      const endBtn = el("endBtn");
+      const backBtn = el("backBtn");
+      const transcriptList = el("transcriptList");
+      const downloadBtn = el("downloadTranscript");
+      const timerEl = el("timer");
+      const viewReportBtn = el("viewReport");
+      const userNameEl = el("userName");
+      const userRoleEl = el("userRole");
+
+      /* ---------- State ---------- */
+      let localStream = null;
+      let videoTrack = null;
+      let audioTrack = null;
+      let micOn = false;
+      let camOn = true;
+      let recording = false;
+      let secondsElapsed = 0;
+      let timerInterval = null;
+      let recognition = null;
+      let transcript = []; // {who, text, ts}
+      let ws = null;
+      let currentQuestionId = null;
+      let waitingForAnswer = false;
+
+      /* ---------- Load user info from localStorage ---------- */
+      function loadUserInfo() {
+        const name = localStorage.getItem("name") || "User";
+        const graduation = localStorage.getItem("graduation") || "";
+        const role = localStorage.getItem("role") || "";
+        userNameEl.textContent = name;
+        userRoleEl.textContent = `${role || "Role"} • ${
+          graduation || "Graduation"
+        }`;
+      }
+      loadUserInfo();
+
+      /* ---------- push transcript bubble ---------- */
+      function pushTranscript(who, text) {
+        const d = document.createElement("div");
+        d.className = "bubble " + (who === "agent" ? "agent" : "user");
+        d.innerHTML = `${escapeHtml(
+          text
+        )} <div style="font-size:11px;color:#777;margin-top:6px">${formatTS()}</div>`;
+        transcriptList.appendChild(d);
+        transcriptList.scrollTop = transcriptList.scrollHeight;
+        transcript.push({ who, text, ts: formatTS() });
+      }
+
+      /* ---------- camera & mic ---------- */
+      async function startCamera() {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 1280 },
+            audio: true,
+          });
+          localVideo.srcObject = localStream;
+          audioTrack = localStream.getAudioTracks()[0] || null;
+          videoTrack = localStream.getVideoTracks()[0] || null;
+          micOn = !!audioTrack;
+          camOn = !!videoTrack;
+        } catch (e) {
+          console.warn("Camera start failed", e);
+          micOn = false;
+          camOn = false;
+        }
+      }
+      function stopCamera() {
+        if (localStream) {
+          localStream.getTracks().forEach((t) => t.stop());
+          localStream = null;
+          audioTrack = null;
+          videoTrack = null;
+        }
+      }
+
+      /* ---------- Timer ---------- */
+      function startTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+          secondsElapsed++;
+          const mm = String(Math.floor(secondsElapsed / 60)).padStart(2, "0");
+          const ss = String(secondsElapsed % 60).padStart(2, "0");
+          timerEl.textContent = `${mm}:${ss}`;
+        }, 1000);
+      }
+      function stopTimer() {
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+      }
+
+      /* ---------- SpeechRecognition ---------- */
+      function supportsSR() {
+        return (
+          "webkitSpeechRecognition" in window || "SpeechRecognition" in window
+        );
+      }
+      function startRecognition() {
+        if (!supportsSR()) return;
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SR();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        let interim = "";
+        recognition.onresult = (event) => {
+          interim = "";
+          let finalText = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const res = event.results[i];
+            if (res.isFinal) finalText += res[0].transcript;
+            else interim += res[0].transcript;
+          }
+          if (interim) {
+            // show interim in UI (optional)
+          }
+          if (finalText) {
+            // Finalized chunk from STT -> send as answer
+            pushTranscript("user", finalText);
+            sendAnswer(finalText);
+          }
+        };
+        recognition.onerror = (e) => console.warn("SR error", e);
+        recognition.onend = () => {
+          if (recording && micOn) recognition.start();
+        };
+        recognition.start();
+      }
+      function stopRecognition() {
+        if (recognition) {
+          try {
+            recognition.onend = null;
+            recognition.stop();
+          } catch {}
+          recognition = null;
+        }
+      }
+
+      /* ---------- WebSocket integration ---------- */
+      function wsConnect() {
+        ws = new WebSocket(WS_URL);
+        ws.addEventListener("open", () => {
+          console.log("WS open");
+          const user = {
+            name: localStorage.getItem("name") || "",
+            graduation: localStorage.getItem("graduation") || "",
+            role: localStorage.getItem("role") || "",
+            interviewType: localStorage.getItem("interviewType") || "",
+            interviewLevel: localStorage.getItem("interviewLevel") || "",
+          };
+          ws.send(JSON.stringify({ type: "init", user }));
+        });
+        ws.addEventListener("message", (ev) => {
+          const msg = JSON.parse(ev.data);
+          console.log("WS msg", msg);
+          if (msg.type === "question") {
+            currentQuestionId = msg.question_id;
+            pushTranscript("agent", msg.text);
+            speakText(msg.text);
+            waitingForAnswer = true;
+          } else if (msg.type === "agent_message") {
+            pushTranscript("agent", msg.text);
+            speakText(msg.text);
+          } else if (msg.type === "done") {
+            pushTranscript("agent", msg.message || "Done");
+            waitingForAnswer = false;
+          } else if (msg.type === "report") {
+            // show simple report UI
+            const repText = JSON.stringify(msg.report, null, 2);
+            pushTranscript(
+              "agent",
+              "Report generated — check console or click View Report."
+            );
+            localStorage.setItem("lastReport", repText);
+          }
+        });
+        ws.addEventListener("close", () => console.log("WS closed"));
+        ws.addEventListener("error", (e) => console.warn("WS error", e));
+      }
+      function sendAnswer(text) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          // fallback: store in transcript only
+          console.warn("WS not open; answer stored locally");
+          return;
+        }
+        if (!currentQuestionId) {
+          console.warn("No current question id set");
+        }
+        ws.send(
+          JSON.stringify({
+            type: "answer",
+            question_id: currentQuestionId,
+            text,
+          })
+        );
+        waitingForAnswer = false;
+      }
+
+      /* ---------- finalize via WS (preferred) or HTTP fallback ---------- */
+      async function finalizeInterview() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "finalize" }));
+          pushTranscript("agent", "Finalizing interview on server...");
+        } else {
+          // fallback HTTP POST to /finalize
+          pushTranscript("agent", "Finalizing interview via HTTP fallback...");
+          const user = {
+            name: localStorage.getItem("name") || "",
+            graduation: localStorage.getItem("graduation") || "",
+            role: localStorage.getItem("role") || "",
+            interviewType: localStorage.getItem("interviewType") || "",
+            interviewLevel: localStorage.getItem("interviewLevel") || "",
+          };
+          try {
+            const res = await fetch(FINALIZE_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user, transcript }),
+            });
+            const data = await res.json();
+            console.log("Finalize HTTP result", data);
+            pushTranscript(
+              "agent",
+              "Server returned final report. Check console."
+            );
+            localStorage.setItem(
+              "lastReport",
+              JSON.stringify(data.result, null, 2)
+            );
+          } catch (e) {
+            console.warn("Finalize HTTP failed", e);
+            pushTranscript("agent", "Finalize failed");
+          }
+        }
+      }
+
+      /* ---------- Init flow ---------- */
+      async function init() {
+        await startCamera();
+        // connect WS after camera ready
+        wsConnect();
+      }
+      init();
+
+      /* ---------- Controls ---------- */
+      recToggle.addEventListener("click", () => {
+        recording = !recording;
+        if (recording) {
+          startTimer();
+          if (micOn) startRecognition();
+          pushTranscript(
+            "agent",
+            "Interview started. Please respond when prompted."
+          );
+        } else {
+          stopTimer();
+          stopRecognition();
+          pushTranscript("agent", "Interview paused.");
+        }
+      });
+      micToggle.addEventListener("click", () => {
+        if (!localStream) {
+          startCamera();
+          return;
+        }
+        if (audioTrack) {
+          audioTrack.enabled = !audioTrack.enabled;
+          micOn = audioTrack.enabled;
+        }
+        if (recording && micOn) startRecognition();
+        else stopRecognition();
+      });
+      camToggle.addEventListener("click", () => {
+        if (!localStream) {
+          startCamera();
+          return;
+        }
+        if (videoTrack) {
+          videoTrack.enabled = !videoTrack.enabled;
+          camOn = videoTrack.enabled;
+        }
+      });
+      endBtn.addEventListener("click", async () => {
+        // finalize flow: stop recognition, stop camera, run finalize
+        recording = false;
+        stopRecognition();
+        stopTimer();
+        stopCamera();
+        // send finalize → server will run Crew B and return report
+        await finalizeInterview();
+      });
+      backBtn.addEventListener("click", () => {
+        if (confirm("Go back to form? Transcript will be saved locally.")) {
+          localStorage.setItem("lastTranscript", JSON.stringify(transcript));
+          window.location.href = "index.html";
+        }
+      });
+      downloadBtn.addEventListener("click", () => {
+        const blob = new Blob([JSON.stringify(transcript, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "transcript.json";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+      viewReportBtn.addEventListener("click", () => {
+        const last = localStorage.getItem("lastReport");
+        if (!last) {
+          alert("No report found yet.");
+          return;
+        }
+        const w = window.open();
+        w.document.body.innerHTML =
+          '<pre style="white-space:pre-wrap">' + escapeHtml(last) + "</pre>";
+      });
+
+      /* ---------- Save transcript periodically ---------- */
+      setInterval(() => {
+        localStorage.setItem("lastTranscript", JSON.stringify(transcript));
+      }, 3000);
+    </script>
+  </body>
+</html>
