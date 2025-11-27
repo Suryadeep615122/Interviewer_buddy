@@ -106,8 +106,29 @@ class FinalReport(BaseModel):
     scores: Dict[int, EvalScore]
     summary: str
     passed: bool
-    timestamp: datetime
+    # Use default_factory to set timestamp on creation
+    timestamp: datetime = PydField(default_factory=datetime.utcnow)
 
+# -------------------------------------------------------
+# CALLBACK FUNCTION (NEW)
+# -------------------------------------------------------
+def log_task_output(task_output):
+    """Callback function to log the output of each task to console."""
+    try:
+        agent_name = task_output.agent.role
+    except AttributeError:
+        agent_name = "Unknown Agent"
+        
+    output = task_output.raw
+    
+    # Log to file
+    logger.info(f"[Task Output] Agent: {agent_name}\nOutput:\n{output}")
+    
+    # Log to console
+    print("\n" + "="*50)
+    print(f"✅ [Task Output] Agent: {agent_name}")
+    print(f"Output:\n{output}")
+    print("="*50 + "\n")
 
 # -------------------------------------------------------
 # CREWAI SETUP WITH GEMINI + GROQ HYBRID
@@ -137,9 +158,9 @@ def make_llm():
     # Try Groq next
     if groq_key:
         try:
-            logger.info("Trying GROQ LLaMA-3.1")
+            logger.info("Trying GROQ qwen/qwen3-32b")
             return LLM(
-                model="groq/llama-3.3-70b-versatile",
+                model="groq/qwen/qwen3-32b",
                 api_key=groq_key,
                 temperature=0.3,
                 max_tokens=2048,
@@ -183,7 +204,8 @@ if CREWAI_AVAILABLE:
         role="Interview Question Designer",
         backstory=(
             "You design interview questions tailored to the role & difficulty. "
-            "You output 8-12 questions with difficulty labels."
+            "You output a clean list of 8-12 questions. "
+            "IMPORTANT: Do NOT include difficulty labels (like 'Medium' or 'Hard') or any other prefix in the question text."
         ),
         goal="Generate a structured list of interview questions.",
         llm=default_llm,
@@ -217,15 +239,20 @@ if CREWAI_AVAILABLE:
         verbose=True,
     )
 
+    # --- MODIFIED AGENT ---
     report_agent = Agent(
         role="Final Report Compiler",
-        backstory="You structure the final report into Pydantic schema.",
-        goal="Build FinalReport object.",
+        backstory="You are a meticulous agent that structures final reports into a Pydantic schema.",
+        goal=(
+            "Assemble the final structured interview report using the Pydantic FinalReport schema. "
+            "Your final answer MUST be ONLY the Pydantic object (as a JSON string) and nothing else. "
+            "Do NOT include <think> tags or any other text in your final response."
+        ),
         llm=default_llm,
         verbose=True,
     )
+    # --- END MODIFICATION ---
 
-    # ---------- Tasks ----------
     # ---------- Tasks ----------
     task_research = Task(
         description="Research role '{role}' at level '{level}' and identify skills, knowledge areas, and typical interview expectations.",
@@ -234,7 +261,9 @@ if CREWAI_AVAILABLE:
     )
 
     task_qgen = Task(
-        description="Generate 8-12 tailored interview questions for role '{role}' level '{level}', include difficulty tags and rationale.",
+        description="Generate 8-12 tailored interview questions for role '{role}' level '{level}'. "
+        "The output must be ONLY the questions, each on a new line, numbered. "
+        "Do NOT include difficulty tags, rationales, or any other text.",
         agent=qgen_agent,
         context=[task_research],
         expected_output="list"
@@ -247,35 +276,51 @@ if CREWAI_AVAILABLE:
         expected_output="text"
     )
 
+    # Crew specifically for generating the question list
+    crew_qgen = Crew(
+        agents=[researcher_agent, qgen_agent],
+        tasks=[task_research, task_qgen],
+        process=Process.sequential,
+        verbose=True,
+        task_callback=log_task_output  
+    )
+
 
     crew_live = Crew(
         agents=[researcher_agent, qgen_agent, interviewer_agent],
         tasks=[task_research, task_qgen, task_interview],
         process=Process.sequential,
         verbose=True,
+        task_callback=log_task_output  
     )
 
     # Post-interview
     task_eval = Task(
-    description="Evaluate each candidate answer and score knowledge, clarity, tone, and overall.",
-    agent=evaluator_agent,
-    expected_output="dict"
+        description="Evaluate the provided interview {transcript}. For each 'user' answer, score their knowledge, clarity, tone, and overall performance.",
+        agent=evaluator_agent,
+        expected_output="dict"
     )
 
     task_feedback = Task(
-        description="Provide actionable feedback for each answer.",
+        description="Using the evaluated {transcript} from the previous step, provide actionable feedback for each user answer.",
         agent=feedback_agent,
         context=[task_eval],
         expected_output="list"
     )
 
+    # --- MODIFIED TASK ---
     task_report = Task(
-        description="Assemble the final structured interview report using the Pydantic FinalReport schema.",
+        description=(
+            "Assemble the final structured interview report for {user} using the evaluated {transcript} and feedback. "
+            "Use the Pydantic FinalReport schema. Your output MUST be the raw JSON object, starting with { and ending with }. "
+            "Do not add any other text, reasoning, or tags."
+        ),
         agent=report_agent,
         context=[task_eval, task_feedback],
         output_pydantic=FinalReport,
         expected_output="FinalReport"
     )
+    # --- END MODIFICATION ---
 
 
     crew_post = Crew(
@@ -283,10 +328,12 @@ if CREWAI_AVAILABLE:
         tasks=[task_eval, task_feedback, task_report],
         process=Process.sequential,
         verbose=True,
+        task_callback=log_task_output 
     )
 else:
     crew_live = None
     crew_post = None
+    crew_qgen = None # Also set qgen to None
 
 
 # -------------------------------------------------------
@@ -329,22 +376,26 @@ def simple_probe(answer: str) -> Optional[str]:
 # -------------------------------------------------------
 # MAIN API FUNCTIONS
 # -------------------------------------------------------
+
+# --- MODIFIED FUNCTION ---
 def generate_questions(user: Dict[str, Any]) -> List[str]:
     role = user.get("role", "Unknown Role")
     level = user.get("interviewLevel", "Medium")
 
     logger.info(f"generate_questions: role={role}, level={level}")
 
-    if CREWAI_AVAILABLE and default_llm:
+    if CREWAI_AVAILABLE and default_llm and crew_qgen: # Check for crew_qgen
         try:
-            out = crew_live.kickoff(inputs={"role": role, "level": level, "user": user})
+            out = crew_qgen.kickoff(inputs={"role": role, "level": level, "user": user})
             last = out.tasks_output[-1]
 
             # 1) If crew output is already a list → return it directly
             if hasattr(last, "output") and isinstance(last.output, list):
+                logger.info("CrewAI returned a clean list.")
                 return last.output
 
             if hasattr(last, "raw") and isinstance(last.raw, list):
+                logger.info("CrewAI returned a raw list.")
                 return last.raw
 
             # 2) Crew output may be a long formatted string containing 1. 2. 3. questions
@@ -361,29 +412,30 @@ def generate_questions(user: Dict[str, Any]) -> List[str]:
                 text_block = json.dumps(text_block, indent=2)
 
             if isinstance(text_block, str):
-                extracted = []
-                for line in text_block.split("\n"):
-                    line = line.strip()
+                
+                # --- START OF FIX ---
+                # The agent's raw output includes its <think> block.
+                # We must strip this block so we only parse the *final* answer.
+                think_end = text_block.rfind('</think>')
+                if think_end != -1:
+                    logger.info("Stripping <think> block from question agent output.")
+                    text_block = text_block[think_end + len('</think>'):]
+                # --- END OF FIX ---
 
-                    # Matches:
-                    # 1. Question
-                    # 2) Question
-                    # 10. Question text...
-                    if len(line) > 2 and line.split(" ")[0].rstrip('.)').isdigit():
-                        # remove leading numbering
-                        parts = line.split(" ", 1)
-                        if len(parts) == 2:
-                            extracted.append(parts[1].strip())
-
+                extracted = extract_from_text(text_block) # Use helper
                 if len(extracted) >= 4:
-                    logger.info("Extracted questions from CrewAI output")
+                    logger.info(f"Extracted {len(extracted)} questions from CrewAI output string.")
                     return extracted
-
+                else:
+                    logger.warning(f"Could not extract questions from text block: {text_block}")
 
         except Exception as e:
             logger.error("CrewAI question generation failed:\n" + traceback.format_exc())
 
+    # Fallback if AI fails or no questions extracted
+    logger.warning("Using fallback questions template.")
     return generate_questions_template(role, level)
+# --- END MODIFIED FUNCTION ---
 
 # =====================================================================
 # NEW: Clean, safe question extractor layer
@@ -399,6 +451,9 @@ def extract_from_text(text: str):
     - CrewAI JSON dumps
     """
     questions = []
+    if not text: # Add safety check
+        return []
+        
     for line in text.split("\n"):
         stripped = line.strip()
 
@@ -424,25 +479,14 @@ def generate_question_list_only(user: dict):
     # Already clean list?
     if isinstance(raw, list) and all(isinstance(q, str) for q in raw):
         return raw
+    
+    # This should not be reached if generate_questions is working,
+    # but as a double-check, we re-run the template.
+    logger.warning("generate_questions did not return a list. Using fallback.")
+    role = user.get("role", "Unknown Role")
+    level = user.get("interviewLevel", "Medium")
+    return generate_questions_template(role, level)
 
-    # JSON/dict → dump → extract
-    if isinstance(raw, dict):
-        try:
-            text = json.dumps(raw, indent=2)
-            qs = extract_from_text(text)
-            if qs:
-                return qs
-        except:
-            pass
-
-    # String → extract
-    if isinstance(raw, str):
-        qs = extract_from_text(raw)
-        if qs:
-            return qs
-
-    # If EVERYTHING fails → return empty (backend will fallback)
-    return []
 
 def interviewer_probe(user: Dict[str, Any], question_id: int, answer: str) -> Optional[str]:
     try:
@@ -450,22 +494,54 @@ def interviewer_probe(user: Dict[str, Any], question_id: int, answer: str) -> Op
     except:
         return None
 
-
+# --- FULLY REPLACED FUNCTION ---
 def run_interview_pipeline(user: Dict[str, Any], transcript: List[Dict[str, Any]]):
+    """
+    Runs the post-interview evaluation crew and returns the structured report.
+    Includes robust parsing logic in case Pydantic output fails.
+    """
     logger.info("Running post-interview pipeline…")
 
-    if CREWAI_AVAILABLE and default_llm:
+    if CREWAI_AVAILABLE and default_llm and crew_post: # Check for crew_post
         try:
             res = crew_post.kickoff(inputs={"user": user, "transcript": transcript})
             last = res.tasks_output[-1]
 
+            # 1. First, try the clean Pydantic output (ideal case)
             if hasattr(last, "pydantic_output") and last.pydantic_output:
+                logger.info("CrewAI Pydantic output succeeded.")
+                # .model_dump() converts the Pydantic object to a dict
                 return {"final_report": last.pydantic_output.model_dump()}
 
-        except Exception:
-            logger.error("CrewAI evaluator failed:\n" + traceback.format_exc())
+            # 2. If Pydantic output failed, try to parse the agent's raw output string
+            logger.warning("Pydantic output failed. Attempting to parse raw agent output.")
+            raw_output = last.raw
+            
+            # Find the JSON block, even if it has <think> tags before it
+            json_start = raw_output.find('{')
+            json_end = raw_output.rfind('}') + 1
+            
+            if json_start != -1 and json_end != -1 and json_end > json_start:
+                json_string = raw_output[json_start:json_end]
+                try:
+                    # Validate and structure the JSON using our Pydantic model
+                    final_report_data = json.loads(json_string)
+                    # We must re-validate it with Pydantic to ensure it's correct
+                    # This also adds any default values (like timestamp)
+                    validated_report = FinalReport(**final_report_data)
+                    logger.info("Successfully parsed and validated raw JSON from agent.")
+                    return {"final_report": validated_report.model_dump()}
+                except Exception as e:
+                    logger.error(f"Failed to parse JSON from raw output: {e}\nRaw output was: {raw_output}")
+            
+            # 3. If both failed, log the raw output and fall through to the fallback
+            logger.error(f"Could not find any valid JSON in agent's final output. Raw: {raw_output}")
 
-    # FALLBACK evaluation
+        except Exception as e:
+            logger.error(f"CrewAI evaluator crew failed with exception:\n{traceback.format_exc()}")
+
+    # FALLBACK evaluation (if try block fails or returns nothing)
+    logger.warning("CrewAI evaluation failed. Using fallback report generator.")
     questions = []
     answers = []
     qid = 0
@@ -475,17 +551,21 @@ def run_interview_pipeline(user: Dict[str, Any], transcript: List[Dict[str, Any]
             qid += 1
             questions.append({"id": qid, "text": item["text"]})
         else:
-            answers.append({"question_id": qid, "text": item["text"]})
+            # Only append answers that have a corresponding question
+            if qid > 0:
+                answers.append({"question_id": qid, "text": item.get("text", "")})
 
     # simple evaluation
     scores = {}
     for ans in answers:
-        txt = ans["text"]
+        txt = ans.get("text", "") # Use .get for safety
         words = len(txt.split())
         knowledge = min(10, max(1, words / 6))
-        clarity = 7 if words > 8 else 5
-        tone = 7
+        clarity = 7.0 if words > 8 else 5.0 # Use floats
+        tone = 7.0 # Use float
         overall = round((knowledge + clarity + tone) / 3, 2)
+        
+        # Match the score structure of EvalScore
         scores[ans["question_id"]] = {
             "knowledge": round(knowledge, 2),
             "clarity": clarity,
@@ -499,11 +579,13 @@ def run_interview_pipeline(user: Dict[str, Any], transcript: List[Dict[str, Any]
 
     final = FinalReport(
         user=user,
-        questions=[Question(id=q["id"], text=q["text"]).model_dump() for q in questions],
+        # Use Question model for correct structure
+        questions=[Question(id=q["id"], text=q["text"], role=None, difficulty=None, tags=[]).model_dump() for q in questions],
         scores={k: EvalScore(**v).model_dump() for k, v in scores.items()},
         summary=f"Fallback evaluation: {len(questions)} questions answered. Avg={avg:.2f}",
         passed=passed,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.utcnow(), # Use correct timestamp
     )
 
     return {"final_report": final.model_dump()}
+# --- END REPLACED FUNCTION ---

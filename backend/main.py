@@ -8,6 +8,8 @@ Run:
 import asyncio
 import json
 import logging
+import os  # <-- ADD THIS IMPORT
+from datetime import datetime  # <-- ADD THIS IMPORT
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,6 +53,28 @@ class InterviewSession:
 
 # in-memory mapping of websocket -> session (single connection per client)
 sessions = {}
+
+# --- ADD THIS HELPER FUNCTION ---
+def save_report_to_disk(report_data: Dict[str, Any], user_data: Dict[str, Any]):
+    """Saves the final report JSON to the /reports directory."""
+    try:
+        # 1. Create a "reports" directory if it doesn't exist
+        os.makedirs("reports", exist_ok=True)
+        
+        # 2. Create a unique filename
+        user_name = user_data.get("name", "user").replace(" ", "_")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"reports/report_{user_name}_{timestamp}.json"
+        
+        # 3. Write the report to the file
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, indent=4)
+        logger.info(f"Successfully saved report to {filename}")
+        
+    except Exception as e:
+        logger.error(f"Failed to save report file: {e}")
+# --- END OF HELPER FUNCTION ---
+
 
 @app.websocket("/ws/interview")
 async def websocket_endpoint(ws: WebSocket):
@@ -141,7 +165,14 @@ async def websocket_endpoint(ws: WebSocket):
                 loop = asyncio.get_running_loop()
                 try:
                     result = await loop.run_in_executor(None, crew_agent.run_interview_pipeline, session.user, transcript)
-                    await ws.send_text(json.dumps({"type":"report","report": result.get("final_report")}))
+                    final_report = result.get("final_report") # <-- Get the report
+                    
+                    # --- ADD THIS ---
+                    if final_report:
+                        save_report_to_disk(final_report, session.user)
+                    # --- END OF ADDITION ---
+
+                    await ws.send_text(json.dumps({"type":"report","report": final_report})) # <-- Use variable
                     await ws.send_text(json.dumps({"type":"agent_message","text":"Report generation complete."}))
                 except Exception:
                     logger.exception("run_interview_pipeline failed")
@@ -175,6 +206,13 @@ async def finalize_endpoint(payload: Dict[str, Any] = Body(...)):
     loop = asyncio.get_running_loop()
     try:
         result = await loop.run_in_executor(None, crew_agent.run_interview_pipeline, user, transcript)
+        final_report = result.get("final_report") # <-- Get the report
+        
+        # --- ADD THIS ---
+        if final_report:
+            save_report_to_disk(final_report, user)
+        # --- END OF ADDITION ---
+
         return {"status":"ok", "result": result}
     except Exception:
         logger.exception("finalize run failed")

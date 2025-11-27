@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Interview - Live</title>
+  <style>
+    :root{
+      --bg1: #f6f6f8;
+      --accent: #ee7f58;
+      --accent-soft:#fdece6;
+      --muted: #9aa0a6;
+      --panel: #ffffff;
+      --shadow: rgba(0,0,0,0.12);
+      --green: #3bb273;
+      --red: #ef5350;
+      --glass: rgba(255,255,255,0.6);
+      --font: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+
+    /* Page / center */
+    html,body{
+      height:100%;
+      margin:0;
+      font-family: var(--font);
+      background: linear-gradient(180deg,#f4f7fb,#ffffff);
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+    .page {
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      box-sizing:border-box;
+    }
+
+    /* Main card that keeps fixed size */
+    .card {
+      width: 95vw;
+      max-width: 1200px;
+      background: var(--panel);
+      border-radius: 14px;
+      box-shadow: 0 10px 30px var(--shadow);
+      padding: 18px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* Top bar: user details, timer, back */
+    .topbar {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:12px;
+    }
+    .user-info {
+      display:flex;
+      gap:12px;
+      align-items:center;
+    }
+    .avatar {
+      width:40px; height:40px;
+      border-radius:50%;
+      background:linear-gradient(135deg,var(--accent),#f09b6c);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:white;
+      font-weight:700;
+      box-shadow:0 3px 8px rgba(0,0,0,0.12);
+    }
+    .user-meta { font-size:14px; color:#333; }
+    .user-meta small { display:block; color:var(--muted); font-size:12px; }
+
+    .controls {
+      display:flex;
+      gap:10px;
+      align-items:center;
+    }
+    .timer {
+      font-weight:600;
+      color:#333;
+      background:var(--glass);
+      padding:8px 12px;
+      border-radius:8px;
+      border:1px solid rgba(0,0,0,0.03);
+    }
+    .back-btn {
+      background:transparent;
+      border:1px solid rgba(0,0,0,0.06);
+      padding:8px 12px;
+      border-radius:8px;
+      cursor:pointer;
+    }
+
+    /* content area */
+    .content {
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+    }
+
+    /* left recbox - video preview */
+    .recbox {
+      width: 60%;
+      min-width: 420px;
+      max-width: 900px;
+      height: 70vh;
+      background: #000;
+      border-radius: 12px;
+      overflow:hidden;
+      position:relative;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+      flex: 0 0 60%;
+    }
+    /* video fills the box */
+    #localVideo {
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      background: #111;
+    }
+    /* left-bottom small overlay for live indicator */
+    .rec-overlay {
+      position:absolute;
+      left:12px; bottom:12px;
+      display:flex; align-items:center; gap:8px;
+      background: rgba(255,255,255,0.06);
+      padding:8px 10px; border-radius:10px;
+      color:white; font-weight:600;
+    }
+    .dot { width:10px; height:10px; border-radius:50%; background:var(--red); box-shadow:0 0 8px rgba(255,0,0,0.25); }
+
+    /* right transcript panel */
+    .transcript-panel {
+      width: 35%;
+      min-width: 300px;
+      height: 70vh;
+      background: linear-gradient(180deg,#fff,#fbfbfd);
+      border-radius:12px;
+      padding:18px;
+      box-sizing:border-box;
+      overflow:auto;
+      border:1px solid rgba(0,0,0,0.04);
+      flex: 0 0 35%;
+    }
+    .transcript-header {
+      text-align:center;
+      font-weight:700;
+      margin-bottom:10px;
+      font-size:18px;
+      color:#222;
+    }
+    .transcript-list { display:flex; flex-direction:column; gap:12px; }
+    /* bubbles */
+    .bubble {
+      max-width:92%;
+      padding:12px 14px;
+      border-radius:12px;
+      position:relative;
+      font-size:14px;
+      line-height:1.35;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.04);
+    }
+    .bubble.agent {
+      background: var(--accent-soft);
+      color:#4b2b16;
+      align-self:flex-start;
+      border-top-left-radius:4px;
+    }
+    .bubble.user {
+      background: #ededed;
+      color:#222;
+      align-self:flex-end;
+      border-top-right-radius:4px;
+      text-align:left;
+    }
+    .bubble .ts { display:block; font-size:11px; color:var(--muted); margin-top:8px; text-align:right; }
+
+    /* footer / action bar fixed inside bottom of card */
+    .footer {
+      margin-top:14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding-top:10px;
+      border-top:1px solid rgba(0,0,0,0.04);
+    }
+    .footer-left { display:flex; gap:12px; align-items:center; }
+    .icon-btn {
+      width:46px; height:46px;
+      border-radius:10px;
+      background:linear-gradient(180deg,#fff,#fff);
+      border:1px solid rgba(0,0,0,0.06);
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer; font-size:18px;
+      transition:transform .12s ease;
+    }
+    .icon-btn:hover{ transform:translateY(-3px); box-shadow:0 8px 18px rgba(0,0,0,0.07); }
+    .icon-btn.active { background:linear-gradient(135deg,#ffefeb,#fde0d4); border-color: rgba(0,0,0,0.08); color:var(--accent); box-shadow:0 6px 18px rgba(238,127,88,0.12); }
+
+    .end-btn {
+      background:var(--accent);
+      color:white; padding:10px 16px; border-radius:8px; border:none; cursor:pointer; font-weight:700;
+    }
+
+    .small-actions { display:flex; gap:8px; align-items:center; }
+    .meta-small { font-size:13px; color:var(--muted); }
+
+    /* responsive */
+    @media (max-width:980px){
+      .content{ flex-direction:column; align-items:center; gap:12px; }
+      .recbox, .transcript-panel { width:100%; min-width:unset; max-width:unset; height:55vh; flex-basis:auto; }
+      .transcript-panel { order:2; }
+      .recbox { order:1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card" role="main">
+
+      <!-- TOP -->
+      <div class="topbar">
+        <div class="user-info">
+          <div id="avatar" class="avatar">U</div>
+          <div>
+            <div id="userName" class="user-meta">User</div>
+            <small id="userRole" class="user-meta small">Role • Graduation</small>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="timer" id="timer">00:00</div>
+          <button class="back-btn" id="backBtn">← Back</button>
+        </div>
+      </div>
+
+      <!-- CONTENT: left recbox, right transcript -->
+      <div class="content">
+        <!-- video box -->
+        <div class="recbox" id="recbox">
+          <video id="localVideo" autoplay muted playsinline></video>
+
+          <div class="rec-overlay">
+            <div class="dot" id="liveDot"></div>
+            <div id="liveText">Live</div>
+          </div>
+        </div>
+
+        <!-- transcript -->
+        <div class="transcript-panel" id="transcriptPanel">
+          <div class="transcript-header">Interview Transcript</div>
+          <div class="transcript-list" id="transcriptList">
+            <!-- bubbles appended here -->
+          </div>
+
+          <!-- small transcript controls -->
+          <div style="margin-top:12px; display:flex; gap:10px; align-items:center; justify-content:center;">
+            <button id="downloadTranscript" class="icon-btn">⤓</button>
+            <div class="meta-small">Save / Download transcript</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- footer -->
+      <div class="footer">
+        <div class="footer-left">
+          <div class="icon-btn" id="camToggle" title="Toggle Camera">📷</div>
+          <div class="icon-btn" id="micToggle" title="Toggle Mic">🎤</div>
+          <div class="icon-btn" id="recToggle" title="Start/Stop Recording">⏺</div>
+          <div class="small-actions">
+            <div class="meta-small">Mic: <span id="micStatus">off</span></div>
+            <div class="meta-small">Cam: <span id="camStatus">on</span></div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button class="end-btn" id="endBtn">End Interview</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+  /*******************************************************
+   index2.html behavior:
+   - reads user data from localStorage (set on index.html)
+   - shows live camera preview (getUserMedia)
+   - toggles camera/mic on/off
+   - uses Web Speech API (SpeechRecognition) for live STT when mic is on (fallback if not available)
+   - appends transcript bubbles with timestamps
+   - timer
+   - back button (to index.html)
+   - saves transcript to localStorage and supports download
+  *******************************************************/
+
+  // --------- Helpers ----------
+  const el = id => document.getElementById(id);
+  const formatTS = (d=new Date()) => {
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    return `${mm}:${ss}`;
+  };
+
+  // State
+  let localStream = null;
+  let audioTrack = null;
+  let videoTrack = null;
+  let micOn = false;
+  let camOn = true;
+  let recording = false;
+  let timerInterval = null;
+  let secondsElapsed = 0;
+  let recognition = null;
+  let transcript = []; // array of {who:'agent'|'user', text:'', ts:''}
+
+  // DOM
+  const localVideo = el('localVideo');
+  const camToggle = el('camToggle');
+  const micToggle = el('micToggle');
+  const recToggle = el('recToggle');
+  const endBtn = el('endBtn');
+  const backBtn = el('backBtn');
+  const transcriptList = el('transcriptList');
+  const timerEl = el('timer');
+  const micStatus = el('micStatus');
+  const camStatus = el('camStatus');
+  const userNameEl = el('userName');
+  const userRoleEl = el('userRole');
+  const avatarEl = el('avatar');
+  const downloadBtn = el('downloadTranscript');
+
+  // --------- Load user info from localStorage ----------
+  function loadUserInfo(){
+    const name = localStorage.getItem('name') || 'User';
+    const graduation = localStorage.getItem('graduation') || '';
+    const role = localStorage.getItem('role') || '';
+    const type = localStorage.getItem('interviewType') || '';
+    const level = localStorage.getItem('interviewLevel') || '';
+
+    userNameEl.textContent = name;
+    userRoleEl.textContent = `${role || 'Role'} • ${graduation || 'Graduation' }`;
+    avatarEl.textContent = (name[0] || 'U').toUpperCase();
+  }
+  loadUserInfo();
+
+  // --------- Video stream ----------
+  async function startCamera(){
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: { width:1280, height:720 }, audio: true });
+      localVideo.srcObject = localStream;
+      // keep tracks
+      audioTrack = localStream.getAudioTracks()[0] || null;
+      videoTrack = localStream.getVideoTracks()[0] || null;
+      camOn = !!videoTrack;
+      micOn = !!audioTrack;
+      updateStatus();
+    } catch (err) {
+      console.error('Camera start error', err);
+      camOn = false;
+      micOn = false;
+      updateStatus();
+      // show placeholder: already black background
+    }
+  }
+
+  function stopCamera(){
+    if(localStream){
+      localStream.getTracks().forEach(t => t.stop());
+      localStream = null;
+      audioTrack = null;
+      videoTrack = null;
+    }
+  }
+
+  // Toggle camera
+  camToggle.addEventListener('click', () => {
+    if(!localStream){ startCamera(); return; }
+    if(videoTrack){
+      const enabled = videoTrack.enabled;
+      videoTrack.enabled = !enabled;
+      camOn = videoTrack.enabled;
+    } else {
+      // try restart camera
+      startCamera();
+    }
+    updateStatus();
+  });
+
+  // Toggle mic (mute/unmute)
+  micToggle.addEventListener('click', () => {
+    if(!localStream){ startCamera(); return; }
+    if(audioTrack){
+      audioTrack.enabled = !audioTrack.enabled;
+      micOn = audioTrack.enabled;
+    } else {
+      // try to get audio track by restarting
+      startCamera();
+    }
+    updateStatus();
+    // If mic turned on, start speech recognition
+    if(micOn && recording) { startRecognition(); }
+    else { stopRecognition(); }
+  });
+
+  // Update status texts/colors
+  function updateStatus(){
+    micStatus.textContent = micOn ? 'on' : 'off';
+    camStatus.textContent = camOn ? 'on' : 'off';
+    if(micOn) micToggle.classList.add('active'); else micToggle.classList.remove('active');
+    if(camOn) camToggle.classList.remove('inactive'); else camToggle.classList.add('inactive');
+  }
+
+  // --------- Timer ----------
+  function startTimer(){
+    if(timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      secondsElapsed++;
+      const mm = String(Math.floor(secondsElapsed/60)).padStart(2,'0');
+      const ss = String(secondsElapsed%60).padStart(2,'0');
+      timerEl.textContent = `${mm}:${ss}`;
+    }, 1000);
+  }
+  function stopTimer(){
+    if(timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  }
+
+  // --------- SpeechRecognition (browser) ----------
+  function supportsSpeechRecognition(){
+    return ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window);
+  }
+
+  function startRecognition(){
+    if(!supportsSpeechRecognition()) {
+      console.warn('SpeechRecognition not supported in this browser. Using placeholder.');
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let interimTranscript = '';
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+      interimTranscript = '';
+      for(let i = event.resultIndex; i < event.results.length; ++i){
+        const res = event.results[i];
+        if(res.isFinal) finalTranscript += res[0].transcript;
+        else interimTranscript += res[0].transcript;
+      }
+      // show interim UI as user bubble (optional)
+      if(interimTranscript){
+        addOrUpdateInterimBubble(interimTranscript);
+      }
+      if(finalTranscript){
+        pushTranscript('user', finalTranscript);
+      }
+    };
+
+    recognition.onerror = (e) => {
+      console.error('SpeechRecognition error', e);
+    };
+    recognition.onend = () => {
+      // restart automatically if recording and micOn
+      if(recording && micOn) recognition.start();
+    };
+    recognition.start();
+  }
+
+  function stopRecognition(){
+    if(recognition){
+      try { recognition.onend = null; recognition.stop(); } catch(e){}
+      recognition = null;
+    }
+    removeInterimBubble();
+  }
+
+  // manage interim bubble (live partial text)
+  let interimBubbleId = null;
+  function addOrUpdateInterimBubble(text){
+    if(!interimBubbleId){
+      interimBubbleId = 'interim';
+      const div = document.createElement('div');
+      div.id = interimBubbleId;
+      div.className = 'bubble user';
+      div.innerHTML = `${escapeHtml(text)} <span class="ts">${formatTS()}</span>`;
+      transcriptList.appendChild(div);
+      transcriptList.scrollTop = transcriptList.scrollHeight;
+    } else {
+      const div = document.getElementById(interimBubbleId);
+      if(div) div.innerHTML = `${escapeHtml(text)} <span class="ts">${formatTS()}</span>`;
+    }
+  }
+  function removeInterimBubble(){
+    if(interimBubbleId){
+      const d = document.getElementById(interimBubbleId);
+      if(d) d.remove();
+      interimBubbleId = null;
+    }
+  }
+
+  // push finalized transcript
+  function pushTranscript(who, text){
+    removeInterimBubble();
+    const ts = formatTS();
+    const item = { who, text: text.trim(), ts };
+    transcript.push(item);
+    renderTranscriptItem(item);
+    saveTranscriptToStorage();
+  }
+
+  // render a transcript item bubble
+  function renderTranscriptItem(item){
+    const div = document.createElement('div');
+    div.className = 'bubble ' + (item.who === 'agent' ? 'agent' : 'user');
+    div.innerHTML = `${escapeHtml(item.text)} <span class="ts">${item.ts}</span>`;
+    transcriptList.appendChild(div);
+    transcriptList.scrollTop = transcriptList.scrollHeight;
+  }
+
+  // small helper to escape HTML
+  function escapeHtml(s){
+    const p = document.createElement('p');
+    p.textContent = s;
+    return p.innerHTML;
+  }
+
+  // --------- Recording / Interview flow ----------
+  recToggle.addEventListener('click', () => {
+    recording = !recording;
+    if(recording){
+      recToggle.classList.add('active');
+      recToggle.textContent = '⏺';
+      startTimer();
+      // start recognition if supported and micOn
+      if(micOn) startRecognition();
+      // optionally append a start agent prompt
+      setTimeout(()=> {
+        pushTranscript('agent', "Hi, let's get started! Can you share a bit about yourself and your professional background?");
+      }, 350);
+    } else {
+      recToggle.classList.remove('active');
+      recToggle.textContent = '⏺';
+      stopTimer();
+      stopRecognition();
+    }
+  });
+
+  // End Interview
+  endBtn.addEventListener('click', () => {
+    // stop everything
+    recording = false;
+    recToggle.classList.remove('active');
+    stopTimer();
+    stopRecognition();
+    stopCamera();
+    // append end marker
+    pushTranscript('agent', 'Interview ended. Thank you!');
+    // save transcript and navigate to report later if desired
+    saveTranscriptToStorage();
+    // optionally redirect or show modal; keep on page
+  });
+
+  // Back button
+  backBtn.addEventListener('click', () => {
+    // Confirm before leaving
+    if(confirm('Go back to the form? Your current transcript will be saved locally.')){
+      saveTranscriptToStorage();
+      window.location.href = 'index.html';
+    }
+  });
+
+  // Download transcript button
+  downloadBtn.addEventListener('click', () => {
+    saveTranscriptToStorage();
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(transcript, null, 2));
+    const dl = document.createElement('a');
+    dl.setAttribute('href', dataStr);
+    dl.setAttribute('download', 'transcript.json');
+    dl.click();
+  });
+
+  // Save transcript to localStorage
+  function saveTranscriptToStorage(){
+    localStorage.setItem('lastTranscript', JSON.stringify(transcript));
+  }
+
+  // Load previous transcript from storage (if any)
+  function loadTranscriptFromStorage(){
+    const raw = localStorage.getItem('lastTranscript');
+    if(raw){
+      try{
+        const arr = JSON.parse(raw);
+        if(Array.isArray(arr)){
+          transcript = arr;
+          transcriptList.innerHTML = '';
+          arr.forEach(renderTranscriptItem);
+        }
+      }catch(e){}
+    }
+  }
+
+  // small bootstrap
+  async function init(){
+    loadTranscriptFromStorage();
+    await startCamera(); // will request camera+mic perms
+    updateStatus();
+    // show small starter agent utterance if none
+    if(transcript.length === 0){
+      pushTranscript('agent', "Hi, let's get started! Can you share a bit about yourself and your professional background?");
+    }
+  }
+
+  // Utility to set UI status after camera start
+  function updateStatus(){
+    micStatus.textContent = micOn ? 'on' : 'off';
+    camStatus.textContent = camOn ? 'on' : 'off';
+    if(micOn) micToggle.classList.add('active'); else micToggle.classList.remove('active');
+    if(camOn) camToggle.classList.add('active'); else camToggle.classList.remove('active');
+  }
+
+  // Init on page load
+  init();
+
+  </script>
+</body>
+</html>
